@@ -134,43 +134,121 @@
 
   <script>
     const AVATAR = 'assets/zoro/frames/wave/01.png';
-    const REPLY = '我收到啦';
+    const TYPE_MS = 28;   // 打字机吐字间隔（毫秒），越小打得越快
 
     const messagesEl = document.getElementById('messages');
     const inputEl = document.getElementById('input');
     const sendBtn = document.getElementById('send');
 
+    // 对话历史（发给 AI 的上下文；开场白只是界面，不进历史）
+    const history = [];
+
+    // 加一条普通消息气泡，返回气泡元素
     function addMessage(text, who) {  // who: 'sent' | 'received'
       const row = document.createElement('div');
       row.className = 'row ' + who;
-
       const avatar = document.createElement('div');
       avatar.className = 'avatar';
       if (who === 'received') avatar.style.backgroundImage = `url("${AVATAR}")`;
-
       const bubble = document.createElement('div');
       bubble.className = 'bubble';
       bubble.textContent = text;
-
       row.appendChild(avatar);
       row.appendChild(bubble);
       messagesEl.appendChild(row);
       messagesEl.scrollTop = messagesEl.scrollHeight;
+      return bubble;
+    }
+
+    // ===== 打字机：流式分块 -> 逐字队列 =====
+    let typeQueue = [];        // 待显示的字符
+    let typeTimer = null;
+    let streaming = false;     // 是否正在接收 AI 回复
+    let streamDone = false;    // 服务端是否已结束
+    let currentBubble = null;  // 正在被打字的气泡
+    let assistantText = '';    // 本轮回复完整文本（用于存入历史）
+
+    function startTyping() {
+      if (typeTimer) return;
+      typeTimer = setInterval(() => {
+        if (typeQueue.length > 0) {
+          currentBubble.textContent += typeQueue.shift();
+          messagesEl.scrollTop = messagesEl.scrollHeight;
+        } else if (streamDone) {
+          // 队列吐完且服务端结束 -> 收尾
+          clearInterval(typeTimer); typeTimer = null;
+          finishStreaming();
+        }
+      }, TYPE_MS);
+    }
+
+    function finishStreaming() {
+      if (assistantText) history.push({ role: 'assistant', content: assistantText });
+      streaming = false;
+      currentBubble = null;
+      updateSendState();
+      inputEl.focus();
     }
 
     function send() {
       const text = inputEl.value.trim();
-      if (!text) return;
+      if (!text || streaming) return;
+
       addMessage(text, 'sent');
+      history.push({ role: 'user', content: text });
       inputEl.value = '';
       autoGrow();
+
+      // 准备接收回复
+      streaming = true;
+      streamDone = false;
+      assistantText = '';
+      typeQueue = [];
+      currentBubble = addMessage('', 'received');
+      currentBubble.classList.add('typing');
+      currentBubble.textContent = '…';
       updateSendState();
-      // 桌宠固定回复（先不接真 AI）
-      setTimeout(() => addMessage(REPLY, 'received'), 500);
+
+      window.chatApi.send(history);
     }
 
+    window.chatApi.onDelta((textChunk) => {
+      if (!currentBubble) return;
+      if (currentBubble.classList.contains('typing')) {   // 第一段到了，清掉占位
+        currentBubble.classList.remove('typing');
+        currentBubble.textContent = '';
+      }
+      assistantText += textChunk;
+      for (const ch of textChunk) typeQueue.push(ch);
+      startTyping();
+    });
+
+    window.chatApi.onDone(() => {
+      streamDone = true;
+      startTyping();   // 万一回复很短、还没启动打字机
+    });
+
+    window.chatApi.onError((payload) => {
+      const code = payload && payload.code;
+      if (currentBubble) currentBubble.remove();   // 去掉占位气泡
+      currentBubble = null;
+      if (typeTimer) { clearInterval(typeTimer); typeTimer = null; }
+      streaming = false;
+      streamDone = true;
+
+      if (code === 'NO_KEY') {
+        const m = addMessage('还没填 API Key。右键菜单 →「设置…」填一下就能聊啦~', 'received');
+        m.parentElement.dataset.hint = '1';   // 标记成提示，配置好后自动清掉
+        window.chatApi.openSettings();         // 顺手帮你打开设置
+      } else {
+        addMessage('（出错了）' + (payload && payload.message ? payload.message : '未知错误'), 'received');
+      }
+      // 出错这轮不算数，把刚加的 user 消息留在历史里也无妨，下次重发会带上
+      updateSendState();
+    });
+
     function updateSendState() {
-      sendBtn.disabled = inputEl.value.trim().length === 0;
+      sendBtn.disabled = streaming || inputEl.value.trim().length === 0;
     }
     function autoGrow() {
       inputEl.style.height = 'auto';
@@ -179,15 +257,28 @@
 
     inputEl.addEventListener('input', () => { updateSendState(); autoGrow(); });
     inputEl.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {   // 回车发送，Shift+回车换行
+      if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         send();
       }
     });
     sendBtn.addEventListener('click', send);
 
-    // 开场白
+    // 配置保存后：清掉「未配置」提示，给个确认
+    window.chatApi.onConfigUpdated(() => {
+      document.querySelectorAll('.row[data-hint]').forEach((el) => el.remove());
+      addMessage('配置好啦，发消息试试吧~', 'received');
+    });
+
+    // 开场白 + 没配置时的提示
     addMessage('嗨，有什么想聊的？', 'received');
+    (async () => {
+      const ok = await window.chatApi.hasKey();
+      if (!ok) {
+        const m = addMessage('（还没配置 API Key——右键菜单 →「设置…」填一下就能聊真 AI 了）', 'received');
+        m.parentElement.dataset.hint = '1';
+      }
+    })();
     inputEl.focus();
   </script>
 </body>

@@ -1,19 +1,32 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+// 桌宠窗口用
 contextBridge.exposeInMainWorld('pet', {
-  // 主进程 -> 渲染层：该播哪个动画
   onAnim: (callback) => {
     ipcRenderer.on('anim', (_event, data) => callback(data));
   },
-  // 主进程 -> 渲染层：暂停 / 继续动画
   onSetPaused: (callback) => {
     ipcRenderer.on('set-paused', (_event, paused) => callback(paused));
   },
-  // 渲染层 -> 主进程：光标是否压在身体上（true=可交互，false=穿透到桌面）
   setInteractive: (interactive) => ipcRenderer.send('set-interactive', interactive),
-  // 渲染层 -> 主进程：开始 / 结束拖动
   dragStart: () => ipcRenderer.send('drag-start'),
   dragEnd: () => ipcRenderer.send('drag-end'),
-  // 渲染层 -> 主进程：在身体上右键，弹出原生菜单
   showMenu: () => ipcRenderer.send('show-context-menu'),
+});
+
+// 聊天窗口用
+contextBridge.exposeInMainWorld('chatApi', {
+  hasKey: () => ipcRenderer.invoke('chat:has-key'),
+  send: (messages) => ipcRenderer.send('chat:send', messages),
+  onDelta: (cb) => ipcRenderer.on('chat:delta', (_e, text) => cb(text)),
+  onDone: (cb) => ipcRenderer.on('chat:done', () => cb()),
+  onError: (cb) => ipcRenderer.on('chat:error', (_e, payload) => cb(payload)),
+  onConfigUpdated: (cb) => ipcRenderer.on('config-updated', () => cb()),
+  openSettings: () => ipcRenderer.send('open-settings'),
+});
+
+// 设置窗口用
+contextBridge.exposeInMainWorld('settingsApi', {
+  get: () => ipcRenderer.invoke('settings:get'),
+  save: (cfg) => ipcRenderer.invoke('settings:save', cfg),
 });

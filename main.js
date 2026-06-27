@@ -1,5 +1,11 @@
 const { app, BrowserWindow, screen, ipcMain, Menu } = require('electron');
 const path = require('path');
+const { getConfig, saveConfig } = require('./config');
+const { streamChat } = require('./openrouter');
+
+// 桌宠的人设（发给 AI 的系统提示）
+const SYSTEM_PROMPT = '你是一只名叫 Zoro 的桌面宠物，性格活泼友好。用简短、口语化的中文回复，别太长。';
+const DEFAULT_MODEL = 'deepseek/deepseek-chat-v3-0324';   // 没填模型时用这个（实测可用、中文好）
 
 const WIN_SIZE = 160;
 
@@ -25,6 +31,8 @@ let bubbleWin = null;
 let bubbleFollowTimer = null;
 let bubbleHideTimer = null;
 let chatWin = null;
+let settingsWin = null;
+let chatAbort = null;
 
 function randInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -184,9 +192,76 @@ function openChat() {
     title: '和 Zoro 聊天',
     titleBarStyle: 'hiddenInset',   // 保留原生红绿灯按钮，隐藏标题栏，自定义内容
     show: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+    },
   });
   chatWin.loadFile('chat.html');
-  chatWin.on('closed', () => { chatWin = null; });
+  chatWin.on('closed', () => {
+    if (chatAbort) { chatAbort.abort(); chatAbort = null; }   // 关窗就取消进行中的请求
+    chatWin = null;
+  });
+}
+
+// ——— 设置窗口 ———
+function openSettings() {
+  if (settingsWin && !settingsWin.isDestroyed()) {
+    settingsWin.show();
+    settingsWin.focus();
+    return;
+  }
+  settingsWin = new BrowserWindow({
+    width: 420,
+    height: 320,
+    resizable: false,
+    title: '设置',
+    titleBarStyle: 'hiddenInset',
+    show: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+    },
+  });
+  settingsWin.loadFile('settings.html');
+  settingsWin.on('closed', () => { settingsWin = null; });
+}
+
+// ——— 把消息发给聊天窗口 ———
+function sendToChat(channel, payload) {
+  if (chatWin && !chatWin.isDestroyed()) chatWin.webContents.send(channel, payload);
+}
+
+// ——— 请求 OpenRouter，流式把回复转发给聊天窗口 ———
+async function handleChatSend(userMessages) {
+  const cfg = getConfig();
+  if (!cfg.apiKey) {
+    sendToChat('chat:error', { code: 'NO_KEY', message: '还没有配置 API Key' });
+    return;
+  }
+
+  if (chatAbort) chatAbort.abort();          // 取消上一条还没结束的请求
+  chatAbort = new AbortController();
+
+  const messages = [{ role: 'system', content: SYSTEM_PROMPT }, ...userMessages];
+  const url = cfg.baseUrl.replace(/\/+$/, '') + '/chat/completions';
+
+  try {
+    await streamChat({
+      url,
+      apiKey: cfg.apiKey,
+      model: cfg.model || DEFAULT_MODEL,   // 没填就用默认模型
+      messages,
+      signal: chatAbort.signal,
+      onDelta: (delta) => sendToChat('chat:delta', delta),
+    });
+    sendToChat('chat:done');
+  } catch (e) {
+    if (e.name === 'AbortError') return;       // 主动取消，不报错
+    if (e.status) {
+      sendToChat('chat:error', { message: `请求失败（${e.status}）：${String(e.detail).slice(0, 300)}` });
+    } else {
+      sendToChat('chat:error', { message: '网络错误：' + e.message });
+    }
+  }
 }
 
 // ——— 原生右键菜单 ———
@@ -196,6 +271,7 @@ function showContextMenu() {
     { label: '打招呼', click: () => greet() },
     { label: paused ? '继续' : '暂停', click: () => setPaused(!paused) },
     { type: 'separator' },
+    { label: '设置…', click: () => openSettings() },
     { label: '退出', click: () => app.quit() },
   ];
   Menu.buildFromTemplate(template).popup({ window: win });
@@ -246,6 +322,19 @@ function registerIpc() {
   ipcMain.on('drag-start', () => startDrag());
   ipcMain.on('drag-end', () => endDrag());
   ipcMain.on('show-context-menu', () => showContextMenu());
+
+  // 设置
+  ipcMain.on('open-settings', () => openSettings());
+  ipcMain.handle('settings:get', () => getConfig());
+  ipcMain.handle('settings:save', (_e, cfg) => {
+    saveConfig(cfg);
+    if (chatWin && !chatWin.isDestroyed()) chatWin.webContents.send('config-updated');
+    return true;
+  });
+
+  // 聊天
+  ipcMain.handle('chat:has-key', () => !!getConfig().apiKey);
+  ipcMain.on('chat:send', (_e, messages) => handleChatSend(messages));
 }
 
 app.whenReady().then(() => {

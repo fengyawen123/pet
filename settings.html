@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%;
+      font: 13px/1.4 -apple-system, "PingFang SC", sans-serif;
+      color: #111;
+      background: #f5f5f7;
+      -webkit-user-select: none; user-select: none;
+    }
+    .titlebar {
+      -webkit-app-region: drag;
+      height: 38px;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 600; font-size: 13px;
+      color: #444;
+    }
+    .body { padding: 4px 22px 20px; }
+    .field { margin-bottom: 14px; }
+    label { display: block; font-weight: 600; margin-bottom: 5px; color: #333; }
+    .hint { font-weight: 400; color: #8e8e93; font-size: 11px; margin-left: 6px; }
+    input {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #d2d2d7;
+      border-radius: 8px;
+      font: inherit; font-size: 13px;
+      background: #fff;
+      outline: none;
+      -webkit-user-select: text; user-select: text;
+    }
+    input:focus { border-color: #0a7cff; }
+    .row { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+    .save {
+      margin-left: auto;
+      padding: 8px 18px;
+      border: none; border-radius: 8px;
+      background: #0a7cff; color: #fff;
+      font: inherit; font-weight: 600; font-size: 13px;
+      cursor: pointer;
+    }
+    .save:active { background: #0860c4; }
+    .status { color: #34c759; font-weight: 600; opacity: 0; transition: opacity .2s; }
+    .status.show { opacity: 1; }
+  </style>
+</head>
+<body>
+  <div class="titlebar">设置</div>
+  <div class="body">
+    <div class="field">
+      <label>API Key <span class="hint">OpenRouter 的密钥，存在本地</span></label>
+      <input id="apiKey" type="password" placeholder="sk-or-..." autocomplete="off" />
+    </div>
+    <div class="field">
+      <label>模型名称 <span class="hint">如 deepseek/deepseek-chat-v3-0324</span></label>
+      <input id="model" type="text" placeholder="deepseek/deepseek-chat-v3-0324" autocomplete="off" />
+    </div>
+    <div class="field">
+      <label>接口地址 <span class="hint">默认 OpenRouter</span></label>
+      <input id="baseUrl" type="text" placeholder="https://openrouter.ai/api/v1" autocomplete="off" />
+    </div>
+    <div class="row">
+      <span class="status" id="status">已保存 ✓</span>
+      <button class="save" id="save">保存</button>
+    </div>
+  </div>
+
+  <script>
+    const apiKeyEl = document.getElementById('apiKey');
+    const modelEl = document.getElementById('model');
+    const baseUrlEl = document.getElementById('baseUrl');
+    const statusEl = document.getElementById('status');
+
+    const DEFAULT_MODEL = 'deepseek/deepseek-chat-v3-0324';
+
+    (async () => {
+      const cfg = await window.settingsApi.get();
+      apiKeyEl.value = cfg.apiKey || '';
+      modelEl.value = cfg.model || DEFAULT_MODEL;   // 填真实默认值，避免误以为占位文字=已填
+      baseUrlEl.value = cfg.baseUrl || '';
+    })();
+
+    document.getElementById('save').addEventListener('click', async () => {
+      await window.settingsApi.save({
+        apiKey: apiKeyEl.value.trim(),
+        model: modelEl.value.trim() || DEFAULT_MODEL,
+        baseUrl: baseUrlEl.value.trim() || 'https://openrouter.ai/api/v1',
+      });
+      statusEl.classList.add('show');
+      setTimeout(() => statusEl.classList.remove('show'), 1500);
+    });
+  </script>
+</body>
+</html>
