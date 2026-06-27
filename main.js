@@ -24,6 +24,7 @@ let paused = false;
 let bubbleWin = null;
 let bubbleFollowTimer = null;
 let bubbleHideTimer = null;
+let chatWin = null;
 
 function randInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -168,9 +169,30 @@ function setPaused(p) {
   }
 }
 
+// ——— 聊天窗口 ———
+function openChat() {
+  if (chatWin && !chatWin.isDestroyed()) {   // 已开就聚焦，不重复开
+    chatWin.show();
+    chatWin.focus();
+    return;
+  }
+  chatWin = new BrowserWindow({
+    width: 360,
+    height: 540,
+    minWidth: 300,
+    minHeight: 400,
+    title: '和 Zoro 聊天',
+    titleBarStyle: 'hiddenInset',   // 保留原生红绿灯按钮，隐藏标题栏，自定义内容
+    show: true,
+  });
+  chatWin.loadFile('chat.html');
+  chatWin.on('closed', () => { chatWin = null; });
+}
+
 // ——— 原生右键菜单 ———
 function showContextMenu() {
   const template = [
+    { label: '聊天', click: () => openChat() },
     { label: '打招呼', click: () => greet() },
     { label: paused ? '继续' : '暂停', click: () => setPaused(!paused) },
     { type: 'separator' },
