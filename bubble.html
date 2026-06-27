@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    html, body {
+      margin: 0;
+      width: 180px;
+      height: 70px;
+      background: transparent;
+      overflow: hidden;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    .bubble {
+      position: relative;
+      max-width: 160px;
+      margin-top: 6px;
+      padding: 8px 14px;
+      background: #ffffff;
+      color: #222;
+      border-radius: 14px;
+      font: 15px/1.3 -apple-system, "PingFang SC", sans-serif;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+      white-space: nowrap;
+    }
+    /* 下方小尖角，指向桌宠 */
+    .bubble::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      bottom: -8px;
+      transform: translateX(-50%);
+      border-left: 8px solid transparent;
+      border-right: 8px solid transparent;
+      border-top: 9px solid #ffffff;
+    }
+  </style>
+</head>
+<body>
+  <div class="bubble" id="bubble">你好呀</div>
+</body>
+</html>

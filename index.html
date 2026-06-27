@@ -51,6 +51,7 @@
     let currentAction = null;
     let currentImg = null;
     let flipped = false;
+    let paused = false;
 
     // 离屏画布：把当前帧画上去，用来判断光标下的像素是否透明
     const canvas = document.createElement('canvas');
@@ -63,6 +64,24 @@
       ctx.drawImage(currentImg, 0, 0, 160, 160);
     }
 
+    let frameIndex = 0;
+
+    // 按当前动作开始/恢复逐帧播放（暂停时不启动）
+    function startTicking() {
+      if (timer) { clearInterval(timer); timer = null; }
+      if (paused || !currentAction) return;
+      const imgs = allImg[currentAction];
+      const fps = ANIM[currentAction].fps;
+      const tick = () => {
+        currentImg = imgs[frameIndex];
+        petImg.src = currentImg.src;
+        drawHitFrame();
+        frameIndex = (frameIndex + 1) % imgs.length;
+      };
+      tick();
+      timer = setInterval(tick, 1000 / fps);
+    }
+
     function play(action, facing) {
       if (facing === 'left')  { petImg.style.transform = 'scaleX(-1)'; flipped = true; }
       if (facing === 'right') { petImg.style.transform = 'scaleX(1)';  flipped = false; }
@@ -70,22 +89,18 @@
 
       if (action === currentAction) return;
       currentAction = action;
-
-      const imgs = allImg[action];
-      const fps = ANIM[action].fps;
-      let i = 0;
-      if (timer) clearInterval(timer);
-      const tick = () => {
-        currentImg = imgs[i];
-        petImg.src = currentImg.src;
-        drawHitFrame();
-        i = (i + 1) % imgs.length;
-      };
-      tick();
-      timer = setInterval(tick, 1000 / fps);
+      frameIndex = 0;
+      startTicking();
     }
 
     window.pet.onAnim(({ action, facing }) => play(action, facing));
+
+    // 暂停 / 继续
+    window.pet.onSetPaused((p) => {
+      paused = p;
+      if (paused) { if (timer) { clearInterval(timer); timer = null; } }
+      else { startTicking(); }
+    });
 
     // ===== 命中检测：光标下是不是身体（不透明像素）=====
     const ALPHA_THRESHOLD = 10;
@@ -127,6 +142,14 @@
       if (isDragging) {
         isDragging = false;
         window.pet.dragEnd();
+      }
+    });
+
+    // 在身体上右键 -> 弹出原生菜单（点透明处不拦截）
+    document.addEventListener('contextmenu', (e) => {
+      if (isOnBody(e.clientX, e.clientY)) {
+        e.preventDefault();
+        window.pet.showMenu();
       }
     });
   </script>

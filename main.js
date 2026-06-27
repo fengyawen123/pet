@@ -1,4 +1,4 @@
-const { app, BrowserWindow, screen, ipcMain } = require('electron');
+const { app, BrowserWindow, screen, ipcMain, Menu } = require('electron');
 const path = require('path');
 
 const WIN_SIZE = 160;
@@ -19,6 +19,11 @@ let idleTimer = null;
 let moveTimer = null;
 let dragTimer = null;
 let dragging = false;
+let paused = false;
+
+let bubbleWin = null;
+let bubbleFollowTimer = null;
+let bubbleHideTimer = null;
 
 function randInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -100,11 +105,78 @@ function endDrag() {
   if (!dragging) return;
   dragging = false;
   if (dragTimer) { clearInterval(dragTimer); dragTimer = null; }
-  // 把松手处设为新的待机点，然后恢复自动走动
+  // 把松手处设为新的待机点
   const [wx, wy] = win.getPosition();
   startX = wx;
   startY = wy;
-  goIdle();
+  if (!paused) goIdle();   // 暂停状态下拖完仍保持冻结
+}
+
+// ===== 说话气泡（独立小窗口，显示在桌宠上方）=====
+const BUBBLE_W = 180;
+const BUBBLE_H = 70;
+
+function createBubbleWindow() {
+  bubbleWin = new BrowserWindow({
+    width: BUBBLE_W,
+    height: BUBBLE_H,
+    transparent: true,
+    frame: false,
+    resizable: false,
+    alwaysOnTop: true,
+    hasShadow: false,
+    skipTaskbar: true,
+    focusable: false,
+    show: false,
+  });
+  bubbleWin.setIgnoreMouseEvents(true);   // 纯展示，鼠标穿透
+  bubbleWin.loadFile('bubble.html');
+}
+
+function positionBubble() {
+  if (!win || !bubbleWin) return;
+  const [px, py] = win.getPosition();
+  const bx = Math.round(px + WIN_SIZE / 2 - BUBBLE_W / 2);
+  const by = Math.round(py - BUBBLE_H + 20);   // 在桌宠正上方，略微重叠让尖角对准
+  bubbleWin.setPosition(bx, by);
+}
+
+// ——— 打招呼：气泡出现 2.5 秒，其间跟随桌宠 ———
+function greet() {
+  if (!bubbleWin) return;
+  positionBubble();
+  bubbleWin.showInactive();
+
+  if (bubbleFollowTimer) clearInterval(bubbleFollowTimer);
+  bubbleFollowTimer = setInterval(positionBubble, 16);
+
+  if (bubbleHideTimer) clearTimeout(bubbleHideTimer);
+  bubbleHideTimer = setTimeout(() => {
+    if (bubbleFollowTimer) { clearInterval(bubbleFollowTimer); bubbleFollowTimer = null; }
+    if (bubbleWin) bubbleWin.hide();
+  }, 2500);
+}
+
+// ——— 暂停 / 继续 ———
+function setPaused(p) {
+  paused = p;
+  if (win && !win.isDestroyed()) win.webContents.send('set-paused', p);
+  if (p) {
+    stopAuto();        // 冻结走动
+  } else {
+    goIdle();          // 恢复自动行为
+  }
+}
+
+// ——— 原生右键菜单 ———
+function showContextMenu() {
+  const template = [
+    { label: '打招呼', click: () => greet() },
+    { label: paused ? '继续' : '暂停', click: () => setPaused(!paused) },
+    { type: 'separator' },
+    { label: '退出', click: () => app.quit() },
+  ];
+  Menu.buildFromTemplate(template).popup({ window: win });
 }
 
 function createWindow() {
@@ -130,6 +202,7 @@ function createWindow() {
   });
 
   win.loadFile('index.html');
+  createBubbleWindow();
 
   // 默认让鼠标穿透到桌面；forward:true 让渲染层仍能收到移动事件做命中检测
   win.setIgnoreMouseEvents(true, { forward: true });
@@ -150,6 +223,7 @@ function registerIpc() {
   });
   ipcMain.on('drag-start', () => startDrag());
   ipcMain.on('drag-end', () => endDrag());
+  ipcMain.on('show-context-menu', () => showContextMenu());
 }
 
 app.whenReady().then(() => {
