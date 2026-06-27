@@ -17,6 +17,7 @@
       image-rendering: pixelated;   /* 像素风保持锐利 */
       -webkit-user-select: none;
       user-select: none;
+      -webkit-user-drag: none;
     }
   </style>
 </head>
@@ -26,13 +27,11 @@
   <script>
     const character = 'zoro';   // 想换角色改这里
 
-    // 每个动作有几帧、每秒播几帧
     const ANIM = {
       scratch: { count: 6, fps: 8 },   // 待机小动作
       walk:    { count: 8, fps: 10 },  // 走路
     };
 
-    // 拼帧路径：assets/zoro/frames/walk/01.png ...
     function framePaths(action) {
       const paths = [];
       for (let i = 1; i <= ANIM[action].count; i++) {
@@ -41,40 +40,95 @@
       return paths;
     }
 
-    // 预加载所有动作的帧，避免切换时闪烁
-    const allFrames = {};
+    // 预加载成 Image 对象，既防闪烁，也供命中检测画到画布上用
+    const allImg = {};
     for (const action in ANIM) {
-      allFrames[action] = framePaths(action);
-      allFrames[action].forEach((src) => { const img = new Image(); img.src = src; });
+      allImg[action] = framePaths(action).map((src) => { const img = new Image(); img.src = src; return img; });
     }
 
     const petImg = document.getElementById('pet');
     let timer = null;
     let currentAction = null;
+    let currentImg = null;
+    let flipped = false;
+
+    // 离屏画布：把当前帧画上去，用来判断光标下的像素是否透明
+    const canvas = document.createElement('canvas');
+    canvas.width = 160; canvas.height = 160;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+    function drawHitFrame() {
+      if (!currentImg || !currentImg.complete) return;
+      ctx.clearRect(0, 0, 160, 160);
+      ctx.drawImage(currentImg, 0, 0, 160, 160);
+    }
 
     function play(action, facing) {
-      // 朝向：往左走时水平翻转
-      if (facing === 'left')  petImg.style.transform = 'scaleX(-1)';
-      if (facing === 'right') petImg.style.transform = 'scaleX(1)';
-      // facing 为 null（待机）时保持上一次朝向
+      if (facing === 'left')  { petImg.style.transform = 'scaleX(-1)'; flipped = true; }
+      if (facing === 'right') { petImg.style.transform = 'scaleX(1)';  flipped = false; }
+      // facing 为 null（待机/拖动）时保持上一次朝向
 
-      if (action === currentAction) return;   // 同一个动作就不重置了
+      if (action === currentAction) return;
       currentAction = action;
 
-      const frames = allFrames[action];
+      const imgs = allImg[action];
       const fps = ANIM[action].fps;
       let i = 0;
       if (timer) clearInterval(timer);
       const tick = () => {
-        petImg.src = frames[i];
-        i = (i + 1) % frames.length;
+        currentImg = imgs[i];
+        petImg.src = currentImg.src;
+        drawHitFrame();
+        i = (i + 1) % imgs.length;
       };
       tick();
       timer = setInterval(tick, 1000 / fps);
     }
 
-    // 接收主进程的指令
     window.pet.onAnim(({ action, facing }) => play(action, facing));
+
+    // ===== 命中检测：光标下是不是身体（不透明像素）=====
+    const ALPHA_THRESHOLD = 10;
+    let lastInteractive = null;
+
+    function isOnBody(clientX, clientY) {
+      let x = Math.floor(clientX);
+      let y = Math.floor(clientY);
+      if (x < 0 || x > 159 || y < 0 || y > 159) return false;
+      if (flipped) x = 159 - x;          // 显示翻转了，采样也要镜像
+      try {
+        const alpha = ctx.getImageData(x, y, 1, 1).data[3];
+        return alpha > ALPHA_THRESHOLD;
+      } catch (e) {
+        return true;                     // 万一读不了像素，宁可可拖也不卡死
+      }
+    }
+
+    let isDragging = false;
+
+    document.addEventListener('mousemove', (e) => {
+      if (isDragging) return;            // 拖动中由主进程接管，不再切换穿透
+      const onBody = isOnBody(e.clientX, e.clientY);
+      if (onBody !== lastInteractive) {
+        lastInteractive = onBody;
+        window.pet.setInteractive(onBody);   // 在身体上=可交互，否则穿透到桌面
+      }
+    });
+
+    document.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      if (isOnBody(e.clientX, e.clientY)) {
+        isDragging = true;
+        window.pet.dragStart();
+      }
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (isDragging) {
+        isDragging = false;
+        window.pet.dragEnd();
+      }
+    });
   </script>
 </body>
 </html>
