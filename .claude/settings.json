@@ -1,0 +1,34 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/zzymima0000/Downloads/pet/hooks/pet-state.sh working"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/zzymima0000/Downloads/pet/hooks/pet-state.sh waiting"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/zzymima0000/Downloads/pet/hooks/pet-state.sh done"
+          }
+        ]
+      }
+    ]
+  }
+}

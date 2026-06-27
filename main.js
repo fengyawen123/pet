@@ -1,5 +1,6 @@
 const { app, BrowserWindow, screen, ipcMain, Menu } = require('electron');
 const path = require('path');
+const http = require('http');
 const { getConfig, saveConfig } = require('./config');
 const { streamChat } = require('./openrouter');
 
@@ -152,20 +153,84 @@ function positionBubble() {
   bubbleWin.setPosition(bx, by);
 }
 
-// ——— 打招呼：气泡出现 2.5 秒，其间跟随桌宠 ———
-function greet() {
+function setBubbleText(text) {
+  if (!bubbleWin || bubbleWin.isDestroyed()) return;
+  bubbleWin.webContents
+    .executeJavaScript(`window.setBubble && window.setBubble(${JSON.stringify(text)})`)
+    .catch(() => {});
+}
+
+// 显示气泡；autoHideMs 为 null 则一直显示，直到状态变化
+function showBubble(text, autoHideMs) {
   if (!bubbleWin) return;
+  setBubbleText(text);
   positionBubble();
   bubbleWin.showInactive();
 
   if (bubbleFollowTimer) clearInterval(bubbleFollowTimer);
-  bubbleFollowTimer = setInterval(positionBubble, 16);
+  bubbleFollowTimer = setInterval(positionBubble, 16);   // 跟随桌宠
 
-  if (bubbleHideTimer) clearTimeout(bubbleHideTimer);
-  bubbleHideTimer = setTimeout(() => {
-    if (bubbleFollowTimer) { clearInterval(bubbleFollowTimer); bubbleFollowTimer = null; }
-    if (bubbleWin) bubbleWin.hide();
-  }, 2500);
+  if (bubbleHideTimer) { clearTimeout(bubbleHideTimer); bubbleHideTimer = null; }
+  if (autoHideMs) bubbleHideTimer = setTimeout(hideBubble, autoHideMs);
+}
+
+function hideBubble() {
+  if (bubbleHideTimer) { clearTimeout(bubbleHideTimer); bubbleHideTimer = null; }
+  if (bubbleFollowTimer) { clearInterval(bubbleFollowTimer); bubbleFollowTimer = null; }
+  if (bubbleWin && !bubbleWin.isDestroyed()) bubbleWin.hide();
+}
+
+// ——— 打招呼：气泡出现 2.5 秒 ———
+function greet() {
+  showBubble('你好呀', 2500);
+}
+
+// ===== 感知 Claude Code 工作状态 =====
+let doneTimer = null;
+
+function handleState(state) {
+  if (doneTimer) { clearTimeout(doneTimer); doneTimer = null; }
+  switch (state) {
+    case 'working':
+      showBubble('工作中…', null);       // 一直显示，直到状态变化
+      break;
+    case 'waiting':
+      showBubble('等你操作', null);
+      break;
+    case 'done':
+      celebrateDone();
+      break;
+    case 'clear':
+    default:
+      hideBubble();
+      break;
+  }
+}
+
+// 完成：弹「搞定了」+ 播一段欢呼动画，然后回到待机
+function celebrateDone() {
+  if (paused) { showBubble('搞定了！', 4000); return; }
+  stopAuto();
+  showBubble('搞定了！', 4000);
+  sendAnim('cheer', 'right');
+  doneTimer = setTimeout(() => {
+    doneTimer = null;
+    if (!paused) goIdle();        // 欢呼完回到待机
+  }, 2600);
+}
+
+// 本地小服务器：Claude Code 的 hook 会 curl 它来报告状态
+const STATE_PORT = 38473;
+function startStateServer() {
+  const server = http.createServer((req, res) => {
+    let state = '';
+    try { state = new URL(req.url, 'http://localhost').searchParams.get('s') || ''; } catch (e) {}
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('ok');
+    if (state) handleState(state);
+  });
+  server.on('error', (e) => console.log('[状态服务器]', e.message));   // 端口占用等，不致命
+  server.listen(STATE_PORT, '127.0.0.1');
 }
 
 // ——— 暂停 / 继续 ———
@@ -341,6 +406,7 @@ function registerIpc() {
 
 app.whenReady().then(() => {
   registerIpc();
+  startStateServer();
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

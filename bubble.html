@@ -42,5 +42,9 @@
 </head>
 <body>
   <div class="bubble" id="bubble">你好呀</div>
+  <script>
+    // 主进程通过 executeJavaScript 调用这个函数来改气泡文字
+    window.setBubble = (text) => { document.getElementById('bubble').textContent = text; };
+  </script>
 </body>
 </html>
