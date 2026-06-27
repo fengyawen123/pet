@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    html, body {
+      margin: 0;
+      width: 160px;
+      height: 160px;
+      background: transparent;     /* 网页背景也要透明 */
+      overflow: hidden;
+    }
+    #pet {
+      width: 160px;
+      height: 160px;
+      object-fit: contain;
+      /* 像素风：放大时保持锐利，不做平滑模糊 */
+      image-rendering: pixelated;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+  </style>
+</head>
+<body>
+  <img id="pet" src="assets/zoro/frames/wave/01.png" alt="pet" />
+</body>
+</html>
