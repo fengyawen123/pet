@@ -28,8 +28,10 @@
     const character = 'zoro';   // 想换角色改这里
 
     const ANIM = {
-      scratch: { count: 6, fps: 8 },   // 待机小动作
+      scratch: { count: 6, fps: 8 },   // 挠痒
       walk:    { count: 8, fps: 10 },  // 走路
+      wave:    { count: 4, fps: 8 },   // 挥手
+      cheer:   { count: 5, fps: 10 },  // 欢呼（完成时用）
     };
 
     function framePaths(action) {
@@ -70,6 +72,13 @@
     function startTicking() {
       if (timer) { clearInterval(timer); timer = null; }
       if (paused || !currentAction) return;
+      if (currentAction === 'still') {       // 静止：定格一帧，不循环
+        const img = allImg.scratch[0];
+        currentImg = img;
+        petImg.src = img.src;
+        drawHitFrame();
+        return;
+      }
       const imgs = allImg[currentAction];
       const fps = ANIM[currentAction].fps;
       const tick = () => {

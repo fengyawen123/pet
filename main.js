@@ -55,12 +55,23 @@ function stopAuto() {
   if (moveTimer) { clearInterval(moveTimer); moveTimer = null; }
 }
 
-// ——— 待机 ———
+// ——— 待机：默认静止不动，过一会儿偶尔动一下 ———
 function goIdle() {
   if (moveTimer) { clearInterval(moveTimer); moveTimer = null; }
-  sendAnim('scratch', null);            // 待机播 scratch，朝向保持不变
+  sendAnim('still', null);              // 定格静止
   const delay = randInt(IDLE_MIN_MS, IDLE_MAX_MS);
-  idleTimer = setTimeout(startWalk, delay);
+  idleTimer = setTimeout(doActivity, delay);
+}
+
+// 偶尔动一下：一半概率走一小段，一半概率原地做个小动作
+function doActivity() {
+  if (Math.random() < 0.5) {
+    startWalk();
+  } else {
+    const acts = ['scratch', 'wave'];
+    sendAnim(acts[randInt(0, acts.length - 1)], 'right');
+    idleTimer = setTimeout(() => { if (!paused) goIdle(); }, 2500);  // 演一会儿回静止
+  }
 }
 
 // ——— 偶尔走动一下：走到附近一个随机位置就停下，不再走回去 ———
@@ -104,7 +115,7 @@ function startDrag() {
   const cursor = screen.getCursorScreenPoint();
   const [wx, wy] = win.getPosition();
   dragOffset = { x: cursor.x - wx, y: cursor.y - wy };
-  sendAnim('scratch', null);           // 拖动时定住一个动作
+  sendAnim('still', null);             // 拖动时定格不动
 
   if (dragTimer) clearInterval(dragTimer);
   dragTimer = setInterval(() => {
