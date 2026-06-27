@@ -12,10 +12,10 @@ const WIN_SIZE = 160;
 // ===== 可调参数 =====
 const WALK_SPEED = 3;       // 每一步移动多少像素（越大走越快）
 const STEP_MS = 20;         // 多久走一步（毫秒）
-const IDLE_MIN_MS = 3000;   // 待机最短时间
-const IDLE_MAX_MS = 8000;   // 待机最长时间
-const WALK_MIN_DIST = 120;  // 单次外出最短距离
-const WALK_MAX_DIST = 350;  // 单次外出最长距离
+const IDLE_MIN_MS = 20000;  // 待机最短时间（默认基本不动，偶尔才走）
+const IDLE_MAX_MS = 60000;  // 待机最长时间
+const WALK_MIN_DIST = 80;   // 单次走动最短距离
+const WALK_MAX_DIST = 220;  // 单次走动最长距离
 
 let win;
 let startX = 0, startY = 0;   // 起始位置（待机点）
@@ -62,22 +62,24 @@ function goIdle() {
   idleTimer = setTimeout(startWalk, delay);
 }
 
-// ——— 决定外出 ———
+// ——— 偶尔走动一下：走到附近一个随机位置就停下，不再走回去 ———
 function startWalk() {
   const dir = Math.random() < 0.5 ? -1 : 1;   // -1 左, +1 右
   const dist = randInt(WALK_MIN_DIST, WALK_MAX_DIST);
   const minX = workArea.x;
   const maxX = workArea.x + workArea.width - WIN_SIZE;
   const target = clamp(startX + dir * dist, minX, maxX);
-  // 先走到外面，到了再走回起点
-  walkTo(target, () => walkTo(startX, goIdle));
+  walkTo(target, () => {
+    startX = target;   // 新位置当作新的待机点，停在这儿
+    goIdle();
+  });
 }
 
 // ——— 走到某个 x，到达后执行 done ———
 function walkTo(targetX, done) {
   const [curX] = win.getPosition();
   const dir = targetX >= curX ? 1 : -1;
-  sendAnim('walk', dir === 1 ? 'right' : 'left');
+  sendAnim('walk', 'right');   // 正面角色，始终正着走，不做镜像翻转
 
   if (moveTimer) { clearInterval(moveTimer); moveTimer = null; }
   moveTimer = setInterval(() => {
