@@ -7,21 +7,74 @@
       margin: 0;
       width: 160px;
       height: 160px;
-      background: transparent;     /* 网页背景也要透明 */
+      background: transparent;
       overflow: hidden;
     }
     #pet {
       width: 160px;
       height: 160px;
       object-fit: contain;
-      /* 像素风：放大时保持锐利，不做平滑模糊 */
-      image-rendering: pixelated;
+      image-rendering: pixelated;   /* 像素风保持锐利 */
       -webkit-user-select: none;
       user-select: none;
     }
   </style>
 </head>
 <body>
-  <img id="pet" src="assets/zoro/frames/wave/01.png" alt="pet" />
+  <img id="pet" alt="pet" />
+
+  <script>
+    const character = 'zoro';   // 想换角色改这里
+
+    // 每个动作有几帧、每秒播几帧
+    const ANIM = {
+      scratch: { count: 6, fps: 8 },   // 待机小动作
+      walk:    { count: 8, fps: 10 },  // 走路
+    };
+
+    // 拼帧路径：assets/zoro/frames/walk/01.png ...
+    function framePaths(action) {
+      const paths = [];
+      for (let i = 1; i <= ANIM[action].count; i++) {
+        paths.push(`assets/${character}/frames/${action}/${String(i).padStart(2, '0')}.png`);
+      }
+      return paths;
+    }
+
+    // 预加载所有动作的帧，避免切换时闪烁
+    const allFrames = {};
+    for (const action in ANIM) {
+      allFrames[action] = framePaths(action);
+      allFrames[action].forEach((src) => { const img = new Image(); img.src = src; });
+    }
+
+    const petImg = document.getElementById('pet');
+    let timer = null;
+    let currentAction = null;
+
+    function play(action, facing) {
+      // 朝向：往左走时水平翻转
+      if (facing === 'left')  petImg.style.transform = 'scaleX(-1)';
+      if (facing === 'right') petImg.style.transform = 'scaleX(1)';
+      // facing 为 null（待机）时保持上一次朝向
+
+      if (action === currentAction) return;   // 同一个动作就不重置了
+      currentAction = action;
+
+      const frames = allFrames[action];
+      const fps = ANIM[action].fps;
+      let i = 0;
+      if (timer) clearInterval(timer);
+      const tick = () => {
+        petImg.src = frames[i];
+        i = (i + 1) % frames.length;
+      };
+      tick();
+      timer = setInterval(tick, 1000 / fps);
+    }
+
+    // 接收主进程的指令
+    window.pet.onAnim(({ action, facing }) => play(action, facing));
+  </script>
 </body>
 </html>
